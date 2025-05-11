@@ -4,9 +4,17 @@ from faker import Faker
 import random
 import datetime
 
-fake = Faker()
-spark = SparkSession.builder.appName("FraudDataGen").getOrCreate()
+# Initialize
+spark = SparkSession.builder \
+    .appName("FraudDataGenerator") \
+    .enableHiveSupport() \
+    .getOrCreate()
 
+fake = Faker()
+Faker.seed(42)
+random.seed(42)
+
+# Define schema
 schema = StructType([
     StructField("transaction_id", LongType(), False),
     StructField("user_id", IntegerType(), False),
@@ -15,27 +23,39 @@ schema = StructType([
     StructField("timestamp", TimestampType(), False),
     StructField("country", StringType(), False),
     StructField("device_type", StringType(), False),
-    StructField("is_fraud", IntegerType(), False),
+    StructField("is_fraud", IntegerType(), False)
 ])
 
-def generate_fake_row(start_id):
-    return (
-        start_id,
-        random.randint(1000, 9999),
-        round(random.uniform(10, 10000), 2),
-        random.choice(["electronics", "travel", "food", "clothing", "jewelry", "crypto"]),
-        fake.date_time_between(start_date='-1y', end_date='now'),
-        random.choice(["US", "UK", "JP", "ID", "DE", "SG", "NG"]),
-        random.choice(["mobile", "desktop", "tablet"]),
-        random.choices([0, 1], weights=[0.995, 0.005])[0]
-    )
+# Sample domains
+categories = ["electronics", "travel", "food", "clothing", "jewelry", "crypto"]
+countries = ["US", "UK", "JP", "ID", "DE", "SG", "NG"]
+devices = ["mobile", "desktop", "tablet"]
 
-batch_size = 10_000_000
+# Generator function
+def generate_batch(start_id, batch_size):
+    data = []
+    for i in range(batch_size):
+        data.append((
+            start_id + i,
+            random.randint(1000, 9999),
+            round(random.uniform(10, 10000), 2),
+            random.choice(categories),
+            fake.date_time_between(start_date='-1y', end_date='now'),
+            random.choice(countries),
+            random.choice(devices),
+            random.choices([0, 1], weights=[0.995, 0.005])[0]
+        ))
+    return data
+
+# Batch write loop
 total_records = 1_000_000_000
-output_path = "hdfs:///tmp/fraud_data"
+batch_size = 1_000_000
 
-for i in range(0, total_records, batch_size):
-    data = [generate_fake_row(i + j) for j in range(batch_size)]
-    df = spark.createDataFrame(data, schema)
-    df.write.mode("append").csv(output_path)
-    print(f"Written {i + batch_size} records")
+for start_id in range(0, total_records, batch_size):
+    print(f"Generating records {start_id} to {start_id + batch_size}")
+    batch_data = generate_batch(start_id, batch_size)
+    df = spark.createDataFrame(batch_data, schema=schema)
+    
+    df.write.mode("append").insertInto("datamart.fraud_transactions")  # Hive insert
+    
+    print(f"✅ Inserted batch up to: {start_id + batch_size}")
