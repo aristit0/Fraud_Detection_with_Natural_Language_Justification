@@ -1,5 +1,5 @@
 # app/main.py
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from sentence_transformers import SentenceTransformer
 from transformers import pipeline
 import faiss
@@ -7,10 +7,10 @@ import numpy as np
 import os
 import json
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates")
 
 # Load embedding model (GPU-enabled if available)
-embedding_model = SentenceTransformer("BAAI/bge-small-en-v1.5")
+embedding_model = SentenceTransformer("model/retrained_embedding_model")
 
 # Load LLM for explanation
 gen_pipeline = pipeline("text-generation", model="gpt2", device=0)
@@ -27,27 +27,20 @@ prompt_template = (
     "Is this suspicious? Why?"
 )
 
-@app.route("/", methods=["POST"])
+@app.route("/", methods=["GET", "POST"])
 def root():
-    data = request.json
-    transaction_text = data.get("transaction")
+    if request.method == "POST":
+        transaction_text = request.form.get("transaction")
+        query_vec = embedding_model.encode([transaction_text])
+        D, I = faiss_index.search(query_vec, k=5)
+        similar_examples = [id_to_text[str(i)] for i in I[0] if str(i) in id_to_text]
 
-    # Embed transaction
-    query_vec = embedding_model.encode([transaction_text])
+        prompt = prompt_template.format(transaction=transaction_text, examples="; ".join(similar_examples))
+        result = gen_pipeline(prompt, max_length=100, do_sample=True, temperature=0.7)
 
-    # Find similar transactions
-    D, I = faiss_index.search(query_vec, k=5)
-    similar_examples = [id_to_text[str(i)] for i in I[0] if str(i) in id_to_text]
+        return render_template("index.html", transaction=transaction_text, examples=similar_examples, response=result[0]["generated_text"])
 
-    # Generate explanation
-    prompt = prompt_template.format(transaction=transaction_text, examples="; ".join(similar_examples))
-    result = gen_pipeline(prompt, max_length=100, do_sample=True, temperature=0.7)
-
-    return jsonify({
-        "transaction": transaction_text,
-        "similar_frauds": similar_examples,
-        "justification": result[0]["generated_text"]
-    })
+    return render_template("index.html")
 
 # Start the app in CML environment
 if __name__ == "__main__":

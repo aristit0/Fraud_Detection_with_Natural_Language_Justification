@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fraud Detection Chat</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background-color: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', sans-serif; }
+    .chat-box { background-color: #161b22; padding: 20px; border-radius: 10px; margin-top: 40px; }
+    .chat-input { background-color: #0d1117; color: #fff; border: 1px solid #30363d; }
+    .chat-input:focus { background-color: #0d1117; color: #fff; border-color: #58a6ff; box-shadow: none; }
+    .response-box { white-space: pre-wrap; background: #21262d; padding: 15px; border-radius: 8px; margin-top: 20px; }
+    .chat-label { color: #8b949e; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="text-center mt-5">💬 Fraud Detection Assistant</h1>
+    <div class="chat-box">
+      <form method="post">
+        <label class="chat-label mb-2">Describe a transaction:</label>
+        <textarea name="transaction" class="form-control chat-input mb-3" rows="3" required>{{ transaction or '' }}</textarea>
+        <div class="text-end">
+          <button type="submit" class="btn btn-primary">Submit</button>
+        </div>
+      </form>
+
+      {% if examples %}
+        <hr>
+        <h5>🔍 Similar Transactions</h5>
+        <ul class="list-group list-group-flush">
+          {% for example in examples %}
+            <li class="list-group-item bg-transparent text-light">{{ example }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if response %}
+        <div class="response-box mt-4">
+          <strong>💡 Justification:</strong>
+          <div class="mt-2">{{ response }}</div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>
