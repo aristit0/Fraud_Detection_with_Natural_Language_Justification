@@ -1,0 +1,6 @@
+A user just did the following transaction: "{transaction}".
+
+Here are some similar examples from past fraud cases:
+{examples}
+
+Based on these patterns, explain whether the current transaction is suspicious and why.
