@@ -14,7 +14,7 @@ PROJECT_ROOT = os.getcwd()
 app = Flask(__name__, template_folder=os.path.join(PROJECT_ROOT, "templates"))
 
 # Load embedding model (will use GPU if available)
-embedding_model = SentenceTransformer(os.path.join(PROJECT_ROOT, "model/retrained_embedding_model"))
+embedding_model = SentenceTransformer(os.path.join(PROJECT_ROOT, "trained_fraud_model"))
 
 # Set device for text-generation model
 device_id = 0 if torch.cuda.is_available() else -1
