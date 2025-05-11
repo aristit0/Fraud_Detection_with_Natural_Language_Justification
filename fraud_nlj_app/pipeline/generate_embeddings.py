@@ -15,21 +15,24 @@ spark = SparkSession.builder \
     .enableHiveSupport() \
     .config("spark.executor.memory", "8g") \
     .config("spark.driver.memory", "8g") \
-    .config("spark.sql.shuffle.partitions", "100") \
+    .config("spark.sql.shuffle.partitions", "50") \
     .getOrCreate()
 
-# Step 2: Load Hive data
+# Step 2: Load Hive data (LIMIT for test)
 print("🔍 Loading data from Hive...")
 df = spark.sql("""
     SELECT transaction_id, user_id, amount, category, country, device_type
     FROM datamart.fraud_transactions
+    LIMIT 1000
 """)
 df = df.withColumn("text", concat_ws(" ", "user_id", "amount", "category", "country", "device_type"))
+df = df.cache()
+df.count()  # Force materialization
 
 # Step 3: Define embedding function
 def embed_partition(pdf: pd.DataFrame) -> pd.DataFrame:
     model = SentenceTransformer("BAAI/bge-small-en-v1.5")
-    embeddings = model.encode(pdf["text"].tolist(), batch_size=64, show_progress_bar=False)
+    embeddings = model.encode(pdf["text"].tolist(), batch_size=16, show_progress_bar=False)
     return pd.DataFrame({
         "transaction_id": pdf["transaction_id"],
         "text": pdf["text"],
@@ -44,7 +47,7 @@ schema = StructType([
 ])
 
 embedding_df = df.select("transaction_id", "text") \
-    .repartition(100) \
+    .repartition(4) \
     .mapInPandas(embed_partition, schema=schema)
 
 # Step 5: Collect back results to driver
