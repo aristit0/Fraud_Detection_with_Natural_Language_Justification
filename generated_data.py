@@ -49,7 +49,7 @@ def generate_batch(start_id, batch_size):
 
 # Batch write loop
 total_records = 1_000_000_000
-batch_size = 100_000_000
+batch_size = 10_000_000
 
 for start_id in range(0, total_records, batch_size):
     print(f"Generating records {start_id} to {start_id + batch_size}")
