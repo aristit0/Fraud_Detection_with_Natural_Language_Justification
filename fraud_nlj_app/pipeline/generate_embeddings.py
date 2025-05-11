@@ -1,42 +1,68 @@
 # pipeline/generate_embeddings.py
-from sentence_transformers import SentenceTransformer
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import concat_ws
-import faiss
+from sentence_transformers import SentenceTransformer
+from pyspark.sql.types import StringType, LongType, StructType, StructField, ArrayType, FloatType
+import pandas as pd
 import numpy as np
-import os
+import faiss
 import json
+import os
 
-# Spark setup
+# Step 1: Spark setup
 spark = SparkSession.builder \
     .appName("GenerateEmbeddings") \
     .enableHiveSupport() \
+    .config("spark.executor.memory", "8g") \
+    .config("spark.driver.memory", "8g") \
+    .config("spark.sql.shuffle.partitions", "100") \
     .getOrCreate()
 
-# Load data
-print("🔍 Loading data from Hive table...")
-df = spark.sql("SELECT transaction_id, user_id, amount, category, country FROM datamart.fraud_transactions")
-df = df.withColumn("text", concat_ws(" ", "user_id", "amount", "category", "country"))
+# Step 2: Load Hive data
+print("🔍 Loading data from Hive...")
+df = spark.sql("""
+    SELECT transaction_id, user_id, amount, category, country, device_type
+    FROM datamart.fraud_transactions
+""")
+df = df.withColumn("text", concat_ws(" ", "user_id", "amount", "category", "country", "device_type"))
 
-# Collect data to driver
-rows = df.select("transaction_id", "text").collect()
-texts = [row["text"] for row in rows]
-ids = [row["transaction_id"] for row in rows]
+# Step 3: Define embedding function
+def embed_partition(pdf: pd.DataFrame) -> pd.DataFrame:
+    model = SentenceTransformer("BAAI/bge-small-en-v1.5")
+    embeddings = model.encode(pdf["text"].tolist(), batch_size=64, show_progress_bar=False)
+    return pd.DataFrame({
+        "transaction_id": pdf["transaction_id"],
+        "text": pdf["text"],
+        "embedding": embeddings.tolist()
+    })
 
-# Embed
-print("🔢 Generating embeddings...")
-model = SentenceTransformer("BAAI/bge-small-en-v1.5")
-embeddings = model.encode(texts, show_progress_bar=True, batch_size=64)
+# Step 4: Distributed embedding using mapInPandas
+schema = StructType([
+    StructField("transaction_id", LongType(), True),
+    StructField("text", StringType(), True),
+    StructField("embedding", ArrayType(FloatType()), True)
+])
 
-# Save FAISS index
-print("💾 Saving FAISS index...")
-index = faiss.IndexFlatL2(embeddings.shape[1])
-index.add(np.array(embeddings).astype("float32"))
+embedding_df = df.select("transaction_id", "text") \
+    .repartition(100) \
+    .mapInPandas(embed_partition, schema=schema)
+
+# Step 5: Collect back results to driver
+print("📥 Collecting embeddings to driver...")
+collected = embedding_df.toPandas()
+
+# Step 6: Save FAISS index
+print("💾 Writing FAISS index and id-to-text mapping...")
+vectors = np.vstack(collected["embedding"].values).astype("float32")
+
+index = faiss.IndexFlatL2(vectors.shape[1])
+index.add(vectors)
+os.makedirs("model", exist_ok=True)
 faiss.write_index(index, "model/embeddings_index.faiss")
 
-# Save text mapping
-os.makedirs("model", exist_ok=True)
+# Save mapping
+id_to_text = {str(row.transaction_id): row.text for row in collected.itertuples(index=False)}
 with open("model/id_to_text.json", "w") as f:
-    json.dump({str(i): text for i, text in zip(ids, texts)}, f)
+    json.dump(id_to_text, f)
 
-print("✅ Embeddings and index saved.")
+print("✅ All done. FAISS index and text mapping saved to /model")
