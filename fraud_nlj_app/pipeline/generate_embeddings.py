@@ -26,7 +26,6 @@ df = spark.sql("""
 """)
 df = df.withColumn("text", concat_ws(" ", "user_id", "amount", "category", "country", "device_type"))
 df = df.cache()
-df.count()  # Materialize
 
 # Step 3: Embedding function
 def embed_partition(pdf: pd.DataFrame) -> pd.DataFrame:
