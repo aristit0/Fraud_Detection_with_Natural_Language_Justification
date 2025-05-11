@@ -2,6 +2,7 @@ import os
 import mlflow
 import pandas as pd
 import numpy as np
+from datasets import Dataset
 from sentence_transformers import SentenceTransformer, losses, InputExample
 from torch.utils.data import DataLoader
 
