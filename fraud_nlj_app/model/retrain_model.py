@@ -1,37 +1,45 @@
-# model/retrain_model.py
-from sentence_transformers import SentenceTransformer, InputExample, losses
-from torch.utils.data import DataLoader
-import pandas as pd
 import os
+import mlflow
+import pandas as pd
+import numpy as np
+from sentence_transformers import SentenceTransformer, losses, InputExample
+from torch.utils.data import DataLoader
 
-# Load dataset
-print("📦 Loading training data...")
-df = pd.read_csv("model/labeled_fraud_pairs.csv")  # CSV with columns: text1, text2, label (1=fraud match, 0=not)
-df = df.dropna()
+# Load training data from Parquet or Hive-converted file
+DATA_PATH = "mlruns_output/labeled_fraud_pairs.parquet"
+df = pd.read_parquet(DATA_PATH)
 
-train_examples = [
+# Expected format: anchor, positive, negative
+# You can modify this logic based on your labeled format
+data = [
     InputExample(texts=[row['text1'], row['text2']], label=float(row['label']))
     for _, row in df.iterrows()
 ]
 
-# Load base model
-print("🧠 Loading base model...")
-model = SentenceTransformer("BAAI/bge-small-en-v1.5")
+# Set experiment tracking
+mlflow.set_experiment("Fraud_Justification_Retrain")
 
-# Prepare dataloader and loss
-train_dataloader = DataLoader(train_examples, shuffle=True, batch_size=32)
-train_loss = losses.CosineSimilarityLoss(model)
+with mlflow.start_run():
+    mlflow.log_param("training_samples", len(data))
 
-# Train model
-print("🚀 Starting fine-tuning...")
-model.fit(
-    train_objectives=[(train_dataloader, train_loss)],
-    epochs=2,
-    warmup_steps=100
-)
+    # Load base model (GPU will be used if available)
+    model = SentenceTransformer("BAAI/bge-small-en-v1.5")
 
-# Save model
-save_path = "model/retrained_embedding_model"
-os.makedirs(save_path, exist_ok=True)
-model.save(save_path)
-print(f"✅ Model saved to: {save_path}")
+    # Create DataLoader
+    train_dataloader = DataLoader(data, shuffle=True, batch_size=32)
+    train_loss = losses.CosineSimilarityLoss(model=model)
+
+    # Fine-tune the model
+    model.fit(
+        train_objectives=[(train_dataloader, train_loss)],
+        epochs=1,
+        warmup_steps=100
+    )
+
+    # Save model locally and log as artifact
+    model_save_path = "trained_fraud_model"
+    model.save(model_save_path)
+    mlflow.log_artifacts(model_save_path, artifact_path="model")
+
+    mlflow.set_tag("use_case", "fraud_detection_with_justification")
+    mlflow.end_run()
