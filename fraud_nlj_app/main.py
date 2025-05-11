@@ -9,7 +9,7 @@ import json
 import torch
 
 # Resolve paths based on the project root
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.getcwd()
 
 app = Flask(__name__, template_folder=os.path.join(PROJECT_ROOT, "templates"))
 
