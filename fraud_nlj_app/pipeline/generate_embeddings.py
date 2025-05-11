@@ -14,17 +14,21 @@ import torch
 spark = SparkSession.builder \
     .appName("GenerateEmbeddings") \
     .enableHiveSupport() \
-    .config("spark.executor.memory", "8g") \
-    .config("spark.driver.memory", "8g") \
-    .config("spark.sql.shuffle.partitions", "10") \
+    .config("spark.executor.instances", "8") \               # Number of executors
+    .config("spark.executor.cores", "4") \                   # Cores per executor
+    .config("spark.executor.memory", "8g") \                # Memory per executor
+    .config("spark.driver.memory", "8g") \                  # Driver memory
+    .config("spark.sql.shuffle.partitions", "32") \          # More shuffle partitions
+    .config("spark.task.cpus", "1") \                        # CPU cores per task
+    .config("spark.rpc.message.maxSize", "1024") \           # Prevent message size failures
+    .config("spark.driver.maxResultSize", "4g") \            # Bigger collect size
     .getOrCreate()
 
 # Step 2: Load Hive data
 print("🔍 Loading data from Hive...")
 df = spark.sql("""
     SELECT transaction_id, user_id, amount, category, country, device_type
-    FROM datamart.fraud_transactions
-    LIMIT 1000
+    FROM datamart.fraud_transactions 
 """)
 df = df.withColumn("text", concat_ws(" ", "user_id", "amount", "category", "country", "device_type"))
 df = df.cache()
