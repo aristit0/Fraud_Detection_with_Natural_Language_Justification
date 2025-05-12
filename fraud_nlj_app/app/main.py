@@ -8,7 +8,7 @@ import json
 import torch
 
 # Get absolute project root
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.getcwd(), ".."))
 
 # Flask app with correct template folder
 app = Flask(__name__, template_folder=os.path.join(PROJECT_ROOT, "templates"))
