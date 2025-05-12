@@ -8,9 +8,7 @@ import json
 import torch
 
 # Get absolute project root
-PROJECT_ROOT = os.path.abspath(os.path.join(os.getcwd(), ".."))
-embedding_model_path = os.path.join(PROJECT_ROOT, "model")
-embedding_model = SentenceTransformer(embedding_model_path)
+PROJECT_ROOT = "/home/cdsw/fraud_nlj_app"
 
 # Flask app with correct template folder
 app = Flask(__name__, template_folder=os.path.join(PROJECT_ROOT, "templates"))
