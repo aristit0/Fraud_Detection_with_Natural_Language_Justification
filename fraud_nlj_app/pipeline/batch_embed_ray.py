@@ -12,7 +12,7 @@ ray.init(ignore_reinit_error=True)
 # Parameters
 BATCH_SIZE = 200_000          # One large batch from Impala
 CHUNK_SIZE = 50_000             # Chunk processed per Ray GPU worker
-TOTAL_ROWS = 1_000_000
+TOTAL_ROWS = 255_000_000
 CONNECTION_NAME = "impala-virtual-warehouse"
 os.makedirs("model/tmp_batches", exist_ok=True)
 
