@@ -11,7 +11,7 @@ import torch
 PROJECT_ROOT = "/home/cdsw/"
 
 # Flask app with correct template folder
-app = Flask(__name__, template_folder=os.path.join("/home/cdsw/fraud_nlj_app/", "templates"))
+app = Flask(__name__, template_folder=os.path.join(PROJECT_ROOT, "fraud_nlj_app/templates"))
 
 # Load embedding model (SentenceTransformer)
 embedding_model_path = os.path.join(PROJECT_ROOT, "trained_fraud_model")
@@ -61,15 +61,19 @@ def root():
         # Lookup similar examples
         similar_examples = [id_to_text[str(i)] for i in I[0] if str(i) in id_to_text]
 
-        # Generate response
+        # Generate prompt and run inference
         prompt = prompt_template.format(transaction=transaction_text, examples="; ".join(similar_examples))
-        result = gen_pipeline(prompt, max_length=100, do_sample=True, temperature=0.7)
+        result = gen_pipeline(prompt, max_new_tokens=100, do_sample=True, temperature=0.7)
+
+        # Strip prompt from output
+        generated_text = result[0]["generated_text"]
+        justification = generated_text.replace(prompt, "").strip()
 
         return render_template(
             "index.html",
             transaction=transaction_text,
             examples=similar_examples,
-            response=result[0]["generated_text"]
+            response=justification
         )
 
     return render_template("index.html")
