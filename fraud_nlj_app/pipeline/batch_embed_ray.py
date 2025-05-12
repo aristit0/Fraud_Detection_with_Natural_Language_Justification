@@ -10,9 +10,9 @@ import cml.data_v1 as cmldata
 ray.init(ignore_reinit_error=True)
 
 # Parameters
-BATCH_SIZE = 1_000_000          # One large batch from Impala
-CHUNK_SIZE = 20_000             # Chunk processed per Ray GPU worker
-TOTAL_ROWS = 255_000_000
+BATCH_SIZE = 200_000          # One large batch from Impala
+CHUNK_SIZE = 50_000             # Chunk processed per Ray GPU worker
+TOTAL_ROWS = 100_000_000
 CONNECTION_NAME = "impala-virtual-warehouse"
 os.makedirs("model/tmp_batches", exist_ok=True)
 
@@ -20,7 +20,7 @@ os.makedirs("model/tmp_batches", exist_ok=True)
 @ray.remote(num_gpus=1)
 def encode_chunk(chunk_texts: list):
     model = SentenceTransformer("BAAI/bge-small-en-v1.5")
-    return model.encode(chunk_texts, batch_size=64, show_progress_bar=False).tolist()
+    return model.encode(chunk_texts, batch_size=32, show_progress_bar=False).tolist()
 
 # Connect to Impala
 conn = cmldata.get_connection(CONNECTION_NAME)
