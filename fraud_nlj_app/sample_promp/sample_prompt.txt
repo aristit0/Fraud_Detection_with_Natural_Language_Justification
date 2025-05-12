@@ -1,0 +1,8 @@
+transaction = "user123 bought 5 iPhones from US using mobile"
+examples = [
+    "user789 bought 10 MacBooks from US using mobile",
+    "user456 spent $5000 on electronics in UK using desktop",
+    "user321 purchased 3 iPads from CA using tablet",
+    "user654 withdrew $3000 from bank in NG using ATM",
+    "user987 ordered 20 smartwatches from US using mobile"
+]
