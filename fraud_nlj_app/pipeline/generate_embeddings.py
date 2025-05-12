@@ -1,77 +1,63 @@
-# pipeline/generate_embeddings.py
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import concat_ws
-from pyspark.sql.types import StringType, LongType, StructType, StructField, ArrayType, FloatType
-from sentence_transformers import SentenceTransformer
+import ray
 import pandas as pd
+from sentence_transformers import SentenceTransformer
 import numpy as np
 import faiss
-import json
 import os
-import torch
+import json
+import cml.data_v1 as cmldata
 
-# Step 1: Spark setup
-spark = SparkSession.builder \
-    .appName("GenerateEmbeddings") \
-    .enableHiveSupport() \
-    .getOrCreate()
+# Step 1: Ray init
+ray.init(ignore_reinit_error=True)
 
-# Step 2: Load Hive data
-print("🔍 Loading data from Hive...")
-df = spark.sql("""
-    SELECT transaction_id, user_id, amount, category, country, device_type
-    FROM datamart.fraud_transactions 
-""")
-df = df.withColumn("text", concat_ws(" ", "user_id", "amount", "category", "country", "device_type"))
-df = df.cache()
+# Step 2: Load from Impala
+conn = cmldata.get_connection("impala-virtual-warehouse")
+query = """
+SELECT transaction_id, user_id, amount, category, country, device_type
+FROM datamart.fraud_transactions
+"""
+print("📥 Running SQL query...")
+df = conn.get_pandas_dataframe(query)
+conn.close()
 
-# Step 3: Define embedding function (GPU-aware)
-def embed_partition(pdf: pd.DataFrame) -> pd.DataFrame:
+# Step 3: Prepare text
+df["text"] = df.apply(lambda row: f"{row['user_id']} {row['amount']} {row['category']} {row['country']} {row['device_type']}", axis=1)
+
+# Step 4: Split into batches
+chunks = np.array_split(df, 100)
+
+@ray.remote(num_gpus=1)
+def encode_chunk(chunk):
     model = SentenceTransformer("BAAI/bge-small-en-v1.5")
-    if torch.cuda.is_available():
-        model = model.to("cuda")
-    embeddings = model.encode(
-        pdf["text"].tolist(),
-        batch_size=64,
-        show_progress_bar=False,
-        device="cuda" if torch.cuda.is_available() else "cpu"
-    )
-    return pd.DataFrame({
-        "transaction_id": pdf["transaction_id"],
-        "text": pdf["text"],
+    embeddings = model.encode(chunk["text"].tolist(), batch_size=64, show_progress_bar=False)
+    return {
+        "transaction_id": chunk["transaction_id"].tolist(),
+        "text": chunk["text"].tolist(),
         "embedding": embeddings.tolist()
-    })
+    }
 
-# Step 4: Distributed embedding using mapInPandas
-schema = StructType([
-    StructField("transaction_id", LongType(), True),
-    StructField("text", StringType(), True),
-    StructField("embedding", ArrayType(FloatType()), True)
-])
-embedding_df = df.select("transaction_id", "text") \
-    .repartition(10) \
-    .mapInPandas(embed_partition, schema=schema)
+# Step 5: Distribute encoding
+futures = [encode_chunk.remote(chunk) for chunk in chunks]
+print("🚀 Embedding in parallel across GPUs...")
+results = ray.get(futures)
 
-# Step 5: Write intermediate output
-print("📤 Writing intermediate embeddings to disk...")
-embedding_df.write.mode("overwrite").parquet("model/embeddings_parquet")
+# Step 6: Flatten results
+all_txn, all_text, all_vec = [], [], []
+for r in results:
+    all_txn.extend(r["transaction_id"])
+    all_text.extend(r["text"])
+    all_vec.extend(r["embedding"])
 
-# Step 6: Load for FAISS indexing
-print("📥 Loading embeddings back for FAISS index...")
-reloaded_df = pd.read_parquet("model/embeddings_parquet")
-
-# Step 7: FAISS Index
-print("💾 Building and writing FAISS index...")
-vectors = np.vstack(reloaded_df["embedding"].values).astype("float32")
+# Step 7: Build FAISS
+vectors = np.array(all_vec).astype("float32")
 index = faiss.IndexFlatL2(vectors.shape[1])
 index.add(vectors)
+
+# Step 8: Save outputs
 os.makedirs("model", exist_ok=True)
 faiss.write_index(index, "model/embeddings_index.faiss")
 
-# Step 8: Save ID-to-text mapping
-print("📝 Writing ID-to-text mapping...")
-id_to_text = {str(row.transaction_id): row.text for row in reloaded_df.itertuples(index=False)}
 with open("model/id_to_text.json", "w") as f:
-    json.dump(id_to_text, f)
+    json.dump({str(k): v for k, v in zip(all_txn, all_text)}, f)
 
-print("✅ All done. Files saved to /model")
+print("✅ Selesai. Model dan FAISS index tersimpan di folder /model")
